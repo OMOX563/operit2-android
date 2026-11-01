@@ -1,0 +1,4 @@
+# APK 构建产物走 GitHub Release 资产，不进仓库
+assets/*.apk
+assets/*.sha256
+*.apk

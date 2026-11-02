@@ -209,7 +209,7 @@ jobs:
       # itself declares none and has no lockfile). BUILDING.md requires this
       # install to happen before the Gradle plugin-sync hook runs.
       - name: Install built-in workflow plugin dependencies
-        working-directory: plugins/packages/buildin/workflow
+        working-directory: operit2-src/plugins/packages/buildin/workflow
         run: |
           corepack pnpm install --frozen-lockfile
           for module in esbuild fflate typescript; do
@@ -247,7 +247,7 @@ jobs:
           echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
       - name: Install project Flutter SDK
-        working-directory: apps/flutter/app
+        working-directory: operit2-src/apps/flutter/app
         run: fvm install --skip-pub-get
 
       - name: Install Rust

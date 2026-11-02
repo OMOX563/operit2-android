@@ -67,7 +67,7 @@ jobs:
       # cannot substitute the wrong payload.
       - name: Apply patched source downloader
         run: |
-          cp build-patches/patches/android-runtime/fetch_sources.ps1 \
+          cp ../build-patches/patches/android-runtime/fetch_sources.ps1 \
              tools/android-runtime/fetch_sources.ps1
           grep -q Mirrors tools/android-runtime/fetch_sources.ps1
 

@@ -1,0 +1,125 @@
+name: Windows Flutter Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Operit2 upstream ref to build (tag, branch or commit)"
+        required: false
+        default: "main"
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: AAswordman/Operit2
+
+jobs:
+  build-windows:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      RUSTFLAGS: -Awarnings
+      RUST_TOOLCHAIN_VERSION: 1.95.0
+      FVM_VERSION: 4.3.0
+
+    steps:
+      - name: Checkout upstream Operit2
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ inputs.upstream_ref }}
+          path: operit2-src
+
+      - name: Install bootstrap Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.5
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install FVM
+        shell: pwsh
+        run: |
+          dart pub global activate fvm $env:FVM_VERSION
+          "$env:APPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install project Flutter SDK
+        working-directory: operit2-src/apps/flutter/app
+        shell: pwsh
+        run: fvm install --skip-pub-get
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+
+      - name: Install LLVM
+        shell: pwsh
+        run: choco install llvm --no-progress --limit-output --yes
+
+      # --- 上游 windows workflow 漏掉的前置步骤（main 从未构建成功）---
+      # windows/runner/CMakeLists.txt 硬编码 .venv/Scripts/python.exe 跑
+      # sync_operit_plugins，runner 从不创建它 → MSB8066。
+      - name: Create repository Python virtual environment
+        working-directory: operit2-src
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          if (!(Test-Path .venv/Scripts/python.exe)) { throw ".venv/Scripts/python.exe missing" }
+
+      # build_flutter_windows.py 不调 generate_dart_proxy_artifacts()（android/
+      # ios/macos 脚本都调），.g.dart 是 gitignored 生成物 → Dart 编译报
+      # 'RuntimeDeviceSpaceDevice' isn't a type。cargo check 会生成它们。
+      - name: Generate Dart proxy artifacts
+        working-directory: operit2-src
+        shell: pwsh
+        run: |
+          cargo check --manifest-path core/crates/proxy/local/Cargo.toml --quiet
+          foreach ($f in @(
+            "apps/flutter/app/lib/core/proxy/generated/CoreProxyClients.g.dart",
+            "apps/flutter/app/lib/core/proxy/generated/CoreProxyModels.g.dart"
+          )) { if (!(Test-Path $f)) { throw "missing generated proxy artifact: $f" } }
+
+      # 插件同步脚本用仓库管理的 TS 编译器（.ci-tools/typescript），不 fallback PATH。
+      - name: Install repository-managed TypeScript compiler
+        working-directory: operit2-src
+        shell: pwsh
+        run: |
+          npm install --prefix .ci-tools/typescript --no-audit --no-fund typescript@5.9.3
+          .ci-tools/typescript/node_modules/.bin/tsc.cmd --version
+
+      # sync 脚本调 corepack pnpm，但 pack:toolpkg 内部又调裸 pnpm。
+      - name: Enable corepack pnpm shim
+        shell: pwsh
+        run: |
+          corepack enable pnpm
+          pnpm --version
+
+      # character_cards build.mjs 经 workflow/package.json 解析 esbuild/fflate/typescript。
+      - name: Install built-in workflow plugin dependencies
+        working-directory: operit2-src/plugins/packages/buildin/workflow
+        shell: pwsh
+        run: |
+          corepack pnpm install --frozen-lockfile
+          foreach ($m in @("esbuild","fflate","typescript")) {
+            if (!(Test-Path "node_modules/$m")) { throw "missing $m" }
+          }
+
+      - name: Build and package Windows app
+        working-directory: operit2-src
+        shell: pwsh
+        run: python tools/build_scripts/build_flutter_windows.py --enforce-lockfile
+
+      - name: Upload Windows app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: operit2-windows-app-${{ github.sha }}
+          path: operit2-src/tools/release/dist/operit2-app-windows-x86_64-*.zip
+          if-no-files-found: error
+          retention-days: 14

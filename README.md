@@ -24,10 +24,19 @@ Operit2 是一个跨设备 AI Agent 项目：Rust 内核 + Flutter 前端，支�
 | 版本 | 2.0.0（versionCode 2030） |
 | ABI | `arm64-v8a`（仅 ARM64） |
 | SDK | minSdk 24（Android 7.0）/ targetSdk 36 |
-| 大小 | 约 152 MB |
+| 大小 | 约 199 MB |
 | 许可证 | AGPL-3.0（随上游） |
 
-体积大是因为内含**源码编译的 V8 JavaScript 引擎**（`liboperit_flutter_bridge.so` 约 133 MB），上游不提供预编译的 Android 产物。
+体积大是因为内含**源码编译的 V8 JavaScript 引擎**（`liboperit_flutter_bridge.so`），上游不提供预编译的 Android 产物。
+
+### 当前版本
+
+| Release | 上游基线 commit | 说明 |
+|---|---|---|
+| `v2.0.0-preview.24-r2` | `3ba24ec` | 最新（同步了上游 16 个新提交） |
+| `v2.0.0-preview.24` | `3405227` | 首个版本 |
+
+上游未变更版本号（仍是 `2.0.0` / 2030），故用 `-r2` 后缀区分。**两版签名密钥相同，可直接覆盖升级。**
 
 ---
 
@@ -45,6 +54,17 @@ Releases 页面提供已签名的 APK：
 sha256sum operit2-app-android-arm64-v8a-<version>.apk
 # 与同名 .sha256 比对
 ```
+
+### 更新内容
+
+每个 Release 的说明里都列出了相对上一版的变化。下面是 `v2.0.0-preview.24-r2` 同步上游 `3405227` → `3ba24ec` 这 16 个提交中可感知的部分：
+
+- 修复 Dafeiyu 角色动画，改用原始动作资源（新增 CC-BY-NC-SA-4.0 授权声明）
+- 恢复 goal mode 生命周期，扩展本地模型支持
+- 修复文件同步、优化日志、增加聊天记录清理
+- 改进 QR 加入流程与变更审查图标
+
+完整提交列表见对应 Release 的说明。
 
 ---
 

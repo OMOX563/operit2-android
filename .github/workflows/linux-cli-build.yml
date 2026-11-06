@@ -9,9 +9,9 @@ on:
         default: "main"
         type: string
       cli_arches:
-        description: "Linux CLI architectures"
+        description: "Linux CLI architectures (host = native glibc build)"
         required: false
-        default: "all"
+        default: "host"
         type: choice
         options:
           - "host"
@@ -45,12 +45,12 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
+          # host 模式只需要常规构建工具；musl / aarch64 交叉工具链在改成
+          # host 构建后不再需要（见下方 Build 步骤的说明）。
           sudo apt-get install -y \
             clang \
             cmake \
-            gcc-aarch64-linux-gnu \
-            libc6-dev-arm64-cross \
-            musl-tools \
+            g++ \
             ninja-build \
             pkg-config \
             libssl-dev
@@ -128,6 +128,20 @@ jobs:
       # 产出 tools/release/dist/operit2-cli-linux-*.tar.gz。
       # 脚本内部自带 prepare_plugin_assets()（cargo build 之前同步插件）与
       # verify_cli_plugin_assets()（校验二进制确实嵌入了所有 .toolpkg）。
+      #
+      # ★ 用 --arches host 而不是 all（2026-11-06 修）：
+      # CLI_RUST_TARGETS 把 linux/x86_64 硬编码成 x86_64-unknown-linux-musl，
+      # 而 local-model crate 的默认 feature native-llm 会用 CMake 编 C++。
+      # Ubuntu 的 musl-tools 只提供 musl-gcc，**没有 musl-g++**，于是 CMake 报：
+      #   The CMAKE_CXX_COMPILER: /usr/bin/musl-g++ is not a full path to an
+      #   existing compiler tool
+      #   thread 'main' panicked at cmake-0.1.58/src/lib.rs:1132
+      # host 模式走 use_default_target=True → 不加 --target → 原生 glibc 编译，
+      # 完全不需要 musl 工具链；而 runner 与目标机都是 Ubuntu 24.04 /
+      # glibc 2.39，二进制可直接运行。
+      # 同理 aarch64 也踩这个坑：gcc-aarch64-linux-gnu 同样不含 g++。
+      # --cli-arches host 还会让 check_build_environment 跳过全部 cross 检查
+      # （check_linux_cross_cli 对 host 直接返回空）。
       - name: Build and package Linux CLI
         working-directory: operit2-src
         run: python3 tools/build_scripts/build_cli_linux.py --arches "${{ inputs.cli_arches }}"

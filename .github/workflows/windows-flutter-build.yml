@@ -73,19 +73,23 @@ jobs:
           python -m venv .venv
           if (!(Test-Path .venv/Scripts/python.exe)) { throw ".venv/Scripts/python.exe missing" }
 
-      # build_flutter_windows.py 不调 generate_dart_proxy_artifacts()（android/
-      # ios/macos 脚本都调），.g.dart 是 gitignored 生成物 → Dart 编译报
-      # 'RuntimeDeviceSpaceDevice' isn't a type。cargo check 会生成它们。
-      - name: Generate Dart proxy artifacts
-        working-directory: operit2-src
-        shell: pwsh
-        run: |
-          cargo check --manifest-path core/crates/proxy/local/Cargo.toml --quiet
-          foreach ($f in @(
-            "apps/flutter/app/lib/core/proxy/generated/CoreProxyClients.g.dart",
-            "apps/flutter/app/lib/core/proxy/generated/CoreProxyModels.g.dart"
-          )) { if (!(Test-Path $f)) { throw "missing generated proxy artifact: $f" } }
-
+      # ★ 以下四步的顺序是硬约束（2026-11-06 修），不能重排：
+      #
+      # cargo check 会编译 core/crates/runtime/application，其 build.rs 调用
+      # collect_example_packages()，要求 plugins/packages/buildin 下每个带
+      # manifest 的包都能在 assets/plugins/buildin 里找到同名 {name}.toolpkg
+      # 归档，缺一个就直接 panic：
+      #   panicked at crates\runtime\application\build.rs:599:32:
+      #   package example has no embedded archive: ...\change_review
+      #
+      # 上游 2026-11-06 起 change_review 改成「自打包型」——归档由它的
+      # scripts/build.mjs 产出（目录型包则由 build.rs 自己打包）。自打包的
+      # 归档只能靠同步脚本生成，所以 cargo check 之前必须先把同步跑完；
+      # 而同步脚本需要 TS 编译器 + corepack pnpm + workflow 依赖。
+      # 原来 cargo check 排在依赖安装之前 → 顺序倒置 → 必失败。
+      # （Android workflow 没这个坑：那边同步由 Gradle 钩子 :app:syncOperitPlugins
+      #   触发，天然在依赖安装之后。）
+      #
       # 插件同步脚本用仓库管理的 TS 编译器（.ci-tools/typescript），不 fallback PATH。
       - name: Install repository-managed TypeScript compiler
         working-directory: operit2-src
@@ -110,6 +114,43 @@ jobs:
           foreach ($m in @("esbuild","fflate","typescript")) {
             if (!(Test-Path "node_modules/$m")) { throw "missing $m" }
           }
+
+      # 产出 assets/plugins/buildin 下的 {name}.toolpkg 归档（自打包型包只能
+      # 靠这一步产生）。--no-hot-reload：CI 里没有正在跑的 Flutter VM。
+      #
+      # 三个自打包型包（scripts 里定义了 pack:toolpkg）的归档由 JS 产出：
+      #   change_review / character_cards / workflow
+      # 目录型包（daily_life / goal_mode / plan_mode / message_translation）
+      # 由 build.rs 自己打包，不依赖这一步。
+      - name: Sync builtin plugin packages
+        working-directory: operit2-src
+        shell: pwsh
+        run: |
+          python plugins/tools/sync_plugin_packages.py --source buildin --no-hot-reload
+          $assets = "core/crates/runtime/application/assets/plugins/buildin"
+          if (!(Test-Path $assets)) { throw "missing $assets" }
+          Get-ChildItem $assets -Filter *.toolpkg | ForEach-Object { Write-Host "asset: $($_.Name) $($_.Length)" }
+          # 自打包型包缺归档时，build.rs 的 collect_example_packages() 会直接
+          # panic（package example has no embedded archive）。这里提前失败并
+          # 指名道姓，比让它在 cargo check 里炸清楚得多。
+          foreach ($pkg in @("change_review","character_cards","workflow")) {
+            $archive = "$assets/$pkg.toolpkg"
+            if (!(Test-Path $archive)) { throw "missing self-packed archive: $archive" }
+            Write-Host "self-packed ok: $pkg"
+          }
+
+      # build_flutter_windows.py 不调 generate_dart_proxy_artifacts()（android/
+      # ios/macos 脚本都调），.g.dart 是 gitignored 生成物 → Dart 编译报
+      # 'RuntimeDeviceSpaceDevice' isn't a type。cargo check 会生成它们。
+      - name: Generate Dart proxy artifacts
+        working-directory: operit2-src
+        shell: pwsh
+        run: |
+          cargo check --manifest-path core/crates/proxy/local/Cargo.toml --quiet
+          foreach ($f in @(
+            "apps/flutter/app/lib/core/proxy/generated/CoreProxyClients.g.dart",
+            "apps/flutter/app/lib/core/proxy/generated/CoreProxyModels.g.dart"
+          )) { if (!(Test-Path $f)) { throw "missing generated proxy artifact: $f" } }
 
       - name: Build and package Windows app
         working-directory: operit2-src

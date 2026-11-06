@@ -303,13 +303,17 @@ jobs:
       - name: Sync builtin plugin packages
         run: |
           .venv/bin/python plugins/tools/sync_plugin_packages.py --source runtime --no-hot-reload
-          assets=core/crates/runtime/application/assets/plugins/buildin
-          test -d "$assets" || { echo "missing $assets" >&2; exit 1; }
-          ls -l "$assets" || true
-          # 自打包型包的归档只能由同步脚本产生；缺了 build.rs 会 panic。
-          for pkg in change_review character_cards workflow; do
-            test -f "$assets/$pkg.toolpkg" || { echo "missing self-packed archive: $assets/$pkg.toolpkg" >&2; exit 1; }
-            echo "self-packed ok: $pkg"
+          base=core/crates/runtime/application/assets/plugins
+          for collection in buildin external; do
+            test -d "$base/$collection" || { echo "missing $base/$collection" >&2; exit 1; }
+            ls -l "$base/$collection" || true
+          done
+          # 自打包型包的归档只能由同步脚本产生；缺了 build.rs 的
+          # collect_example_packages() 会 panic（package example has no
+          # embedded archive）。这里提前失败并指名道姓。
+          for spec in buildin/change_review buildin/character_cards buildin/workflow external/openui; do
+            test -f "$base/$spec.toolpkg" || { echo "missing self-packed archive: $base/$spec.toolpkg" >&2; exit 1; }
+            echo "self-packed ok: $spec"
           done
 
       - name: Build and package Android app

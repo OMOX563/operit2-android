@@ -122,21 +122,33 @@ jobs:
       #   change_review / character_cards / workflow
       # 目录型包（daily_life / goal_mode / plan_mode / message_translation）
       # 由 build.rs 自己打包，不依赖这一步。
-      - name: Sync builtin plugin packages
+      - name: Sync builtin and external plugin packages
         working-directory: operit2-src
         shell: pwsh
         run: |
-          python plugins/tools/sync_plugin_packages.py --source buildin --no-hot-reload
-          $assets = "core/crates/runtime/application/assets/plugins/buildin"
-          if (!(Test-Path $assets)) { throw "missing $assets" }
-          Get-ChildItem $assets -Filter *.toolpkg | ForEach-Object { Write-Host "asset: $($_.Name) $($_.Length)" }
+          # --source runtime = buildin + external。external 也必须同步：build.rs
+          # 的 collect_example_packages() 会遍历 plugins/packages/external，缺归档
+          # 同样 panic（package example has no embedded archive: ...\external\context_limiter）。
+          python plugins/tools/sync_plugin_packages.py --source runtime --no-hot-reload
+          foreach ($collection in @("buildin","external")) {
+            $assets = "core/crates/runtime/application/assets/plugins/$collection"
+            if (!(Test-Path $assets)) { throw "missing $assets" }
+            Get-ChildItem $assets -Filter *.toolpkg | ForEach-Object { Write-Host "asset[$collection]: $($_.Name) $($_.Length)" }
+          }
           # 自打包型包缺归档时，build.rs 的 collect_example_packages() 会直接
           # panic（package example has no embedded archive）。这里提前失败并
           # 指名道姓，比让它在 cargo check 里炸清楚得多。
-          foreach ($pkg in @("change_review","character_cards","workflow")) {
-            $archive = "$assets/$pkg.toolpkg"
-            if (!(Test-Path $archive)) { throw "missing self-packed archive: $archive" }
-            Write-Host "self-packed ok: $pkg"
+          $selfPacked = @{
+            "buildin"  = @("change_review","character_cards","workflow")
+            "external" = @("openui")
+          }
+          foreach ($collection in $selfPacked.Keys) {
+            $assets = "core/crates/runtime/application/assets/plugins/$collection"
+            foreach ($pkg in $selfPacked[$collection]) {
+              $archive = "$assets/$pkg.toolpkg"
+              if (!(Test-Path $archive)) { throw "missing self-packed archive: $archive" }
+              Write-Host "self-packed ok: $collection/$pkg"
+            }
           }
 
       # build_flutter_windows.py 不调 generate_dart_proxy_artifacts()（android/

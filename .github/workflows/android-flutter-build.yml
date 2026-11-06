@@ -287,6 +287,31 @@ jobs:
       - name: Check build environment
         run: python3 tools/build_scripts/check_build_environment.py --products app --github-runner
 
+      # ★ 同步必须在任何 cargo 编译之前（2026-11-06 修）
+      #
+      # build_flutter_android.py 会先跑 cargo check 生成 Dart proxy 产物，
+      # 那一步会编译 core/crates/runtime/application，其 build.rs 调用
+      # collect_example_packages()，要求 plugins/packages/buildin 下每个带
+      # manifest 的包都能在 assets/plugins/buildin 里找到同名 {name}.toolpkg
+      # 归档，缺一个就直接 panic：
+      #   panicked at crates/runtime/application/build.rs:599:32:
+      #   package example has no embedded archive: .../plan_mode
+      #
+      # Gradle 的 :app:syncOperitPlugins 钩子虽然存在，但它挂在 preBuild 上，
+      # 晚于 cargo check —— 顺序倒置。同步脚本本身还需要 corepack pnpm +
+      # workflow 依赖 + TS 编译器（上面几步已装好）。
+      - name: Sync builtin plugin packages
+        run: |
+          .venv/bin/python plugins/tools/sync_plugin_packages.py --source runtime --no-hot-reload
+          assets=core/crates/runtime/application/assets/plugins/buildin
+          test -d "$assets" || { echo "missing $assets" >&2; exit 1; }
+          ls -l "$assets" || true
+          # 自打包型包的归档只能由同步脚本产生；缺了 build.rs 会 panic。
+          for pkg in change_review character_cards workflow; do
+            test -f "$assets/$pkg.toolpkg" || { echo "missing self-packed archive: $assets/$pkg.toolpkg" >&2; exit 1; }
+            echo "self-packed ok: $pkg"
+          done
+
       - name: Build and package Android app
         run: |
           version=$(grep -E '^version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+' apps/flutter/app/pubspec.yaml)

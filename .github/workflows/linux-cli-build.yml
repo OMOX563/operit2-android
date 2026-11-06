@@ -32,6 +32,7 @@ jobs:
     env:
       RUSTFLAGS: -Awarnings
       RUST_TOOLCHAIN_VERSION: 1.95.0
+      FVM_VERSION: 4.3.0
 
     steps:
       - name: Checkout upstream Operit2
@@ -58,6 +59,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      # tools/build_scripts/check_build_environment.py 的 check_common_tools()
+      # 无条件检查 fvm / dart 是否在 PATH 上（不按 --products 过滤），即使只构建
+      # CLI 也一样。CLI 本身不需要 Flutter，但这个门禁过不去就不能往下走。
+      # 只装 fvm CLI + Dart SDK 即可（检查项是 `fvm --version` / `dart --version`），
+      # 不需要 `fvm install` 拉整个 Flutter SDK。
+      - name: Install bootstrap Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.5
+
+      - name: Install FVM
+        run: |
+          dart pub global activate fvm "$FVM_VERSION"
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
 
       # build_cli_linux.py → build_cli_target() → prepare_plugin_assets() 会跑
       # plugins/tools/sync_plugin_packages.py --source runtime --no-hot-reload，

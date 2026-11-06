@@ -1,0 +1,125 @@
+name: Linux CLI Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Operit2 upstream ref to build (tag, branch or commit)"
+        required: false
+        default: "main"
+        type: string
+      cli_arches:
+        description: "Linux CLI architectures"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - "host"
+          - "all"
+          - "x86_64"
+          - "aarch64"
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: AAswordman/Operit2
+
+jobs:
+  build-linux-cli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      RUSTFLAGS: -Awarnings
+      RUST_TOOLCHAIN_VERSION: 1.95.0
+
+    steps:
+      - name: Checkout upstream Operit2
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ inputs.upstream_ref }}
+          path: operit2-src
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            musl-tools \
+            ninja-build \
+            pkg-config \
+            libssl-dev
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # build_cli_linux.py → build_cli_target() → prepare_plugin_assets() 会跑
+      # plugins/tools/sync_plugin_packages.py --source runtime --no-hot-reload，
+      # 该脚本需要：
+      #   1. 仓库管理的 TS 编译器（.ci-tools/typescript/node_modules/.bin/tsc，
+      #      仓库里没有这个目录，CI 时现装；脚本不 fallback 到 PATH 的 tsc）
+      #   2. corepack pnpm（脚本用 `corepack pnpm install --frozen-lockfile`，
+      #      而自打包型包的 pack:toolpkg 内部又调裸 `pnpm run pack:toolpkg`）
+      #   3. plugins/packages/buildin/workflow 的依赖（character_cards /
+      #      workflow 的 build.mjs 经 workflow/package.json 解析
+      #      esbuild / fflate / typescript）
+      # 上游的 linux-release-build.yml 只装了 Node.js，没有这三样 → 会失败。
+      - name: Install repository-managed TypeScript compiler
+        working-directory: operit2-src
+        run: |
+          npm install --prefix .ci-tools/typescript --no-audit --no-fund typescript@5.9.3
+          .ci-tools/typescript/node_modules/.bin/tsc --version
+
+      - name: Enable corepack pnpm shim
+        run: |
+          corepack enable pnpm
+          pnpm --version
+
+      - name: Install built-in workflow plugin dependencies
+        working-directory: operit2-src/plugins/packages/buildin/workflow
+        run: |
+          corepack pnpm install --frozen-lockfile
+          for m in esbuild fflate typescript; do
+            test -d "node_modules/$m" || { echo "missing $m" >&2; exit 1; }
+          done
+
+      # build_cli_linux.py 用 REPO_ROOT/.venv/bin/python 跑同步脚本，
+      # prepare_python_command() 会在 Linux 上把 .venv/bin/python 软链到当前
+      # python。这里先建好 venv，路径与 Gradle 里硬编码的 .venv/bin/python 一致。
+      - name: Create repository Python virtual environment
+        working-directory: operit2-src
+        run: |
+          python3 -m venv .venv
+          test -x .venv/bin/python || { echo ".venv/bin/python missing" >&2; exit 1; }
+          .venv/bin/python --version
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-gnu
+
+      - name: Check build environment
+        working-directory: operit2-src
+        run: python3 tools/build_scripts/check_build_environment.py --products cli --cli-arches "${{ inputs.cli_arches }}" --github-runner
+
+      # 产出 tools/release/dist/operit2-cli-linux-*.tar.gz。
+      # 脚本内部自带 prepare_plugin_assets()（cargo build 之前同步插件）与
+      # verify_cli_plugin_assets()（校验二进制确实嵌入了所有 .toolpkg）。
+      - name: Build and package Linux CLI
+        working-directory: operit2-src
+        run: python3 tools/build_scripts/build_cli_linux.py --arches "${{ inputs.cli_arches }}"
+
+      - name: Upload Linux CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: operit2-linux-cli-${{ github.sha }}
+          path: operit2-src/tools/release/dist/operit2-cli-linux-*.tar.gz
+          if-no-files-found: error
+          retention-days: 14

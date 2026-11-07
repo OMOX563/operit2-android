@@ -1,0 +1,124 @@
+name: Windows CLI Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Operit2 upstream ref to build (tag, branch or commit)"
+        required: false
+        default: "main"
+        type: string
+      cli_arches:
+        description: "Windows CLI architectures (host = native msvc build)"
+        required: false
+        default: "host"
+        type: choice
+        options:
+          - "host"
+          - "all"
+          - "x86_64"
+          - "aarch64"
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: AAswordman/Operit2
+
+jobs:
+  build-windows-cli:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      RUSTFLAGS: -Awarnings
+      RUST_TOOLCHAIN_VERSION: 1.95.0
+      FVM_VERSION: 4.3.0
+
+    steps:
+      - name: Checkout upstream Operit2
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ inputs.upstream_ref }}
+          path: operit2-src
+
+      - name: Install bootstrap Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.11.5
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # check_build_environment.py 的 check_common_tools() 无条件检查 fvm / dart，
+      # 即使只构建 CLI 也一样（--products 不过滤这两项）。CLI 本身不需要 Flutter，
+      # 但这个门禁过不去就会 exit 1。只装 fvm CLI + Dart SDK，检查项只跑 --version。
+      - name: Install FVM
+        shell: pwsh
+        run: |
+          dart pub global activate fvm $env:FVM_VERSION
+          "$env:APPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          targets: x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+
+      # local-model 的 native-llm 走 CMake + bindgen，需要 libclang。
+      - name: Install LLVM
+        shell: pwsh
+        run: choco install llvm --no-progress --limit-output --yes
+
+      # build_cli_windows.py → build_cli_target() → prepare_plugin_assets() 会跑
+      # plugins/tools/sync_plugin_packages.py --source runtime --no-hot-reload。
+      # 该脚本需要：仓库管理的 TS 编译器（.ci-tools/typescript，仓库里没有、CI 现装，
+      # 且不 fallback 到 PATH）+ corepack pnpm shim（pack:toolpkg 内部调裸 pnpm）+
+      # buildin/workflow 的 node 依赖（character_cards/workflow 的 build.mjs 经它解析
+      # esbuild/fflate/typescript）。上游 windows workflow 缺这三样。
+      - name: Install repository-managed TypeScript compiler
+        working-directory: operit2-src
+        shell: pwsh
+        run: |
+          npm install --prefix .ci-tools/typescript --no-audit --no-fund typescript@5.9.3
+          .ci-tools/typescript/node_modules/.bin/tsc.cmd --version
+
+      - name: Enable corepack pnpm shim
+        shell: pwsh
+        run: |
+          corepack enable pnpm
+          pnpm --version
+
+      - name: Install built-in workflow plugin dependencies
+        working-directory: operit2-src/plugins/packages/buildin/workflow
+        shell: pwsh
+        run: |
+          corepack pnpm install --frozen-lockfile
+          foreach ($m in @("esbuild","fflate","typescript")) {
+            if (!(Test-Path "node_modules/$m")) { throw "missing $m" }
+          }
+
+      - name: Check build environment
+        working-directory: operit2-src
+        shell: pwsh
+        run: python tools/build_scripts/check_build_environment.py --products cli --cli-arches "${{ inputs.cli_arches }}" --github-runner
+
+      # 产出 tools/release/dist/operit2-cli-windows-x86_64-<version>.zip。
+      # 脚本内部自带 prepare_plugin_assets()（cargo build 前同步插件）与
+      # verify_cli_plugin_assets()（扫描二进制确认每个 .toolpkg 都嵌进去了）；
+      # Windows 包额外带 operit_local_llm.dll 与 install.bat/uninstall.bat。
+      - name: Build and package Windows CLI
+        working-directory: operit2-src
+        shell: pwsh
+        run: python tools/build_scripts/build_cli_windows.py --arches "${{ inputs.cli_arches }}"
+
+      # upload-artifact 的 path 不受 working-directory 影响，必须带 operit2-src/ 前缀。
+      - name: Upload Windows CLI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: operit2-windows-cli-${{ github.sha }}
+          path: operit2-src/tools/release/dist/operit2-cli-windows-*.zip
+          if-no-files-found: error
+          retention-days: 14

@@ -3,7 +3,7 @@
 [![Upstream](https://img.shields.io/badge/upstream-AAswordman%2FOperit2-blue?style=for-the-badge)](https://github.com/AAswordman/Operit2)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-orange?style=for-the-badge)](https://github.com/AAswordman/Operit2/blob/main/LICENSE)
 
-由 **Operit2 官方源码**构建的三平台产物：**Windows 桌面版**、**Android APK**、**Linux CLI**。
+由 **Operit2 官方源码**构建的四端产物：**Windows 桌面版（GUI）**、**Windows CLI（含 TUI）**、**Android APK**、**Linux CLI**。
 
 > **本仓库不是 Operit2 的官方仓库。**
 > Operit2 官方项目地址：<https://github.com/AAswordman/Operit2>
@@ -21,7 +21,7 @@ Operit2 是一个跨设备 AI Agent 项目：Rust 内核 + Flutter 前端，支�
 
 | Release | 上游基线 commit | 产物 |
 |---|---|---|
-| `v2.0.0-preview.26` | `27190a13` | Windows + Android + Linux CLI（三端同源） |
+| `v2.0.0-preview.26` | `27190a13` | Windows GUI + Windows CLI + Android + Linux CLI（四端同源） |
 | `v2.0.0-preview.24-r2` | `3ba24ec` | 仅 Android |
 | `v2.0.0-preview.24` | `3405227` | 仅 Android（首个版本） |
 
@@ -44,6 +44,14 @@ sha256sum -c operit2-<product>-<platform>-<arch>-<version>.<ext>.sha256
 - 资产：`operit2-app-windows-x86_64-<version>.zip`
 - 解压即用（扁平结构：`operit2.exe` + 若干 dll + `data/`），无需安装程序
 - 版本号看 exe 的 `VersionInfo`（如 `2.0.0+32`），与下面的 preview 号不是同一套口径
+
+### Windows CLI（含 TUI）
+
+- 资产：`operit2-cli-windows-x86_64-<version>.zip`
+- 解压后运行 `install.bat`，装到 `%LOCALAPPDATA%\Programs\Operit2\bin` 并写入用户 `PATH`（新开终端生效）
+- 启动终端界面：`operit2 tui`；也可用 `operit2 cli <command>` / `operit2 daemon <command>`
+- **不依赖 GPU**（纯终端渲染），桌面版在某些显卡驱动上不稳定时可作为替代
+- 注意：与桌面版 GUI 共用 `%APPDATA%\Operit2\runtime`，不要同时运行
 
 ### Android
 
@@ -107,6 +115,7 @@ sha256sum -c operit2-<product>-<platform>-<arch>-<version>.<ext>.sha256
 | `windows-flutter-build.yml` | Windows 桌面版 zip | `windows-2025` |
 | `android-flutter-build.yml` | Android APK | `ubuntu-24.04` |
 | `linux-cli-build.yml` | Linux CLI tar.gz | `ubuntu-24.04` |
+| `windows-cli-build.yml` | Windows CLI zip（含 TUI） | `windows-2025` |
 
 Android 需配置 4 个 repository secrets：`ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_STORE_PASSWORD`、`ANDROID_RELEASE_KEY_ALIAS`、`ANDROID_RELEASE_KEY_PASSWORD`。
 

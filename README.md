@@ -21,6 +21,7 @@ Operit2 是一个跨设备 AI Agent 项目：Rust 内核 + Flutter 前端，支�
 
 | Release | 上游基线 commit | 产物 |
 |---|---|---|
+| `v2.0.0-preview.28` | `d4775f14` | Windows GUI + Windows CLI + Android + Linux CLI（四端同源） |
 | `v2.0.0-preview.26` | `27190a13` | Windows GUI + Windows CLI + Android + Linux CLI（四端同源） |
 | `v2.0.0-preview.24-r2` | `3ba24ec` | 仅 Android |
 | `v2.0.0-preview.24` | `3405227` | 仅 Android（首个版本） |
@@ -90,8 +91,8 @@ sha256sum -c operit2-<product>-<platform>-<arch>-<version>.<ext>.sha256
 **是的。** 本仓库的构建流程以官方 `main` 为基线，官方有新提交后重新触发 CI 即可产出新包。
 
 - 上游：<https://github.com/AAswordman/Operit2>
-- 产物文件名带完整版本号（如 `2.0.0-preview.26`），可据此判断对应上游哪个版本
-- 官方推进较快（CLI 内部版本已到 `2.0.0-preview.26`，而 GitHub Release 仍停在 `v2.0.0-preview.3`），**本仓库的包可能落后于官方最新提交**，属正常现象
+- 产物文件名带完整版本号（如 `2.0.0-preview.28`），可据此判断对应上游哪个版本
+- 官方推进较快（CLI 内部版本已到 `2.0.0-preview.28`，而 GitHub Release 仍停在 `v2.0.0-preview.3`），**本仓库的包可能落后于官方最新提交**，属正常现象
 
 ### 版本号说明（官方项目有三套口径，容易混淆）
 
@@ -99,7 +100,7 @@ sha256sum -c operit2-<product>-<platform>-<arch>-<version>.<ext>.sha256
 |---|---|---|
 | Git tag | `v2.0.0-preview.4` | 代码仓库打的标签 |
 | GitHub Release | `v2.0.0-preview.3` | 官方正式发布的产物（目前仅 CLI 二进制） |
-| `apps/cli/Cargo.toml` | `2.0.0-preview.26` | 代码内部版本号，实际推进最靠前 |
+| `apps/cli/Cargo.toml` | `2.0.0-preview.28` | 代码内部版本号，实际推进最靠前 |
 | 桌面包 exe `VersionInfo` | `2.0.0+32` | Flutter build 号，与上面三者无关 |
 
 ---
